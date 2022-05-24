@@ -19,11 +19,7 @@ env:
 
 jobs:
   create-binaries:
-    runs-on: ${{matrix.os}}
-    strategy:
-      matrix:
-        os:         [ windows-2022 ] # Use 'windows-2022' instead of 'windows-latest' because it seems to have problems
-      fail-fast:    true
+    runs-on: windows-latest
 
     steps:
       # Check out the repository
