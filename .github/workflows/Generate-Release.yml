@@ -15,19 +15,19 @@ env:
   # The name of the binary executable file, excluding extensions.
   # If this is blank, the value specified by '$PROJECT_NAME' is used instead. (See the 'Configure Environment' step.)
   BINARY_NAME: ''
-  BUILD_TYPE: Release
+  BUILD_TYPE: MinSizeRel
 
 jobs:
   create-binaries:
     runs-on: ${{matrix.os}}
     strategy:
       matrix:
-        os:         [ ubuntu-latest, windows-2022, macos-latest ] # Use 'windows-2022' instead of 'windows-latest' because it seems to have problems
+        os:         [ windows-2022 ] # Use 'windows-2022' instead of 'windows-latest' because it seems to have problems
       fail-fast:    true
 
     steps:
       # Check out the repository
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         submodules:   recursive
         fetch-depth:  0
@@ -110,7 +110,6 @@ jobs:
       
     # Upload Release
     - name: 'Create Release'
-      #if:   ${{ github.event_name == 'workflow_dispatch' }}
       uses: softprops/action-gh-release@v1
       with:
         draft:                    ${{ github.event.inputs.is-draft || true }}
