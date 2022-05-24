@@ -11,14 +11,10 @@ env:
   # - Build Subdirectory Name
   # - Archive Name Prefix
   PROJECT_NAME: 'VCUpdateUtility'
-  # [BINARY_NAME]
-  # The name of the binary executable file, excluding extensions.
-  # If this is blank, the value specified by '$PROJECT_NAME' is used instead. (See the 'Configure Environment' step.)
-  BINARY_NAME: ''
   BUILD_TYPE: MinSizeRel
 
 jobs:
-  create-binaries:
+  create-binary:
     runs-on: windows-latest
 
     steps:
@@ -29,65 +25,34 @@ jobs:
         fetch-depth:  0
       
     # Set up platform dependencies
-      # Ninja
     - uses: seanmiddleditch/gha-setup-ninja@master
-      # MSVC (Windows)
-    - if:   ${{ runner.os == 'Windows' }}
-      uses: ilammy/msvc-dev-cmd@v1
-      # gcc-10 g++-10 zip unzip (Linux)
-    - if:   ${{ runner.os == 'Linux' }}
-      run:  sudo apt-get update && sudo apt-get install gcc-10 g++-10 zip unzip -y
-      
+    - uses: ilammy/msvc-dev-cmd@v1
       
     # Configure CMake Cache
       # Windows
-    - name:   Configure CMake (Windows)
-      if:     ${{ runner.os == 'Windows' }}
+    - name:   Configure CMake
       run:    cmake -B '${{github.workspace}}/build' -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -G Ninja
-      # Linux/macOS
-    - name:   Configure CMake (Linux/macOS)
-      if:     ${{ runner.os != 'Windows' }}
-      run:    cmake -B '${{github.workspace}}/build' -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -G Ninja
-      env:
-        CC:   gcc-10
-        CXX:  g++-10
 
     # Build Binary
     - name: Build
       run:  cmake --build '${{github.workspace}}/build' --config '${{env.BUILD_TYPE}}'
       
-    # Create Packaged Release Archive
-      # Windows
-    - name:   Create Archive (Windows)
-      if:     ${{ runner.os == 'Windows' }}
-      run:    |
-              cd "${{github.workspace}}/build/${{env.PROJECT_NAME}}"
-              Compress-Archive "${{env.BINARY_NAME || env.PROJECT_NAME}}.exe" "${{env.PROJECT_NAME}}-$(.\${{env.PROJECT_NAME}} -vq)-Windows.zip"
-      shell:  powershell
-      # Linux / macOS
-    - name:   Create Archive (Linux/macOS)
-      if:     ${{ runner.os != 'Windows' }}
-      run:    |
-              cd "${{github.workspace}}/build/${{env.PROJECT_NAME}}"
-              zip -T9 "${{env.PROJECT_NAME}}-$(./${{env.PROJECT_NAME}} -vq)-${{runner.os}}.zip" "${{env.BINARY_NAME || env.PROJECT_NAME}}"
-      shell:  bash
-      
     # Upload Artifact
     - name:   Upload Artifact
       uses:   actions/upload-artifact@v2
       with:
-        name: latest-${{runner.os}}
-        path: '${{github.workspace}}/build/${{env.PROJECT_NAME}}/*.zip'
+        name: latest
+        path: '${{github.workspace}}/build/${{env.PROJECT_NAME}}/*.exe'
 #:create-binaries
       
   create-release:
-    needs: create-binaries      
+    needs: create-binary      
     runs-on: ubuntu-latest
     
     steps:
     # Download Artifacts
     - name: 'Download Build Artifacts'
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v3
             
     # Retrieve the latest git tag if this was triggered by a tag
     - name: 'Get Release Tag'
@@ -101,7 +66,7 @@ jobs:
     - name:   'Stage Archives'
       run:    |
               cd ${{github.workspace}}
-              if mv ./latest-*/* ./ ; then ls -lAgh ; else ls -lAghR ; fi
+              if mv ./latest/* ./ ; then ls -lAgh ; else ls -lAghR ; fi
       shell:  bash
       
     # Upload Release
@@ -115,5 +80,5 @@ jobs:
         generate_release_notes:   ${{ github.event.inputs.autogenerate || true }}
         body:                     ${{ github.event.inputs.body || '' }}
         fail_on_unmatched_files:  true
-        files:                    ${{github.workspace}}/*.zip
+        files:                    ${{github.workspace}}/*.exe
 #:create-release
