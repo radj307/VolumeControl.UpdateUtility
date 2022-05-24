@@ -10,4 +10,4 @@ GET_VERSION_TAG("${CMAKE_CURRENT_SOURCE_DIR}" "VCUpdateUtility")
 project ("VCUpdateUtility" VERSION "${VCUpdateUtility_VERSION}" LANGUAGES CXX)
 
 add_subdirectory("307lib")
-add_subdirectory("UpdateUtility")
+add_subdirectory("VCUpdateUtility")
