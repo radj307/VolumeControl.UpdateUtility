@@ -1,4 +1,5 @@
 #include "rc/version.h"
+#include "StreamRedirect.hpp"
 #include "win.h"
 
 #include <TermAPI.hpp>
@@ -7,6 +8,7 @@
 #include <cpr/cpr.h>
 
 #include <iostream>
+#include <Windows.h>
 
 /// @brief	Helper functor that prints the usage guide.
 struct Help {
@@ -24,16 +26,17 @@ struct Help {
 			<< "  " << h._name << " <OPTIONS>" << '\n'
 			<< '\n'
 			<< "OPTIONS:\n"
-			<< "  -h, --help            Prints this help display, then exits." << '\n'
-			<< "  -v, --version         Prints the current version number, then exits." << '\n'
-			<< "  -q, --quiet           Prevents most console output." << '\n'
-			<< "  -u, --url <URI>       Specifies the target download URL." << '\n'
-			<< "  -o, --out <PATH>      Specifies the output file location." << '\n'
-			<< "                          If this already exists, it is renamed by appending '.backup' before downloading." << '\n'
-			<< "  -s, --size <BYTES>    Specifies the amount of memory to reserve for streaming the file. (RECOMMENDED)" << '\n'
-			<< "      --no-backup       Prevents a backup from being made at all." << '\n'
-			<< "      --keep-backup     Doesn't delete the backup file once the download has successfully completed." << '\n'
-			<< "  -r, --restart         Attempts to start the new instance before the program exits." << '\n'
+			<< "  -h, --help             Prints this help display, then exits." << '\n'
+			<< "  -v, --version          Prints the current version number, then exits." << '\n'
+			<< "  -q, --quiet            Prevents most console output." << '\n'
+			<< "  -u, --url <URI>        Specifies the target download URL." << '\n'
+			<< "  -o, --out <PATH>       Specifies the output file location." << '\n'
+			<< "                           If this already exists, it is renamed by appending '.backup' before downloading." << '\n'
+			<< "  -s, --size <BYTES>     Specifies the amount of memory to reserve for streaming the file. (RECOMMENDED)" << '\n'
+			<< "      --no-backup        Prevents a backup from being made at all." << '\n'
+			<< "      --keep-backup      Doesn't delete the backup file once the download has successfully completed." << '\n'
+			<< "  -r, --restart          Attempts to start the new instance before the program exits." << '\n'
+			<< "      --redirect <PATH>  Redirects console output to the specified file." << '\n'
 			<< '\n'
 			<< "RETURNS:\n"
 			<< "  0                     Success" << '\n'
@@ -48,6 +51,8 @@ static struct {
 	bool quiet{ false };
 	std::string url;
 	std::filesystem::path out, backup;
+	std::ofstream logRedirect;
+	bool useLogRedirect{ false };
 	bool noBackup{ false };
 	bool keepBackup{ false };
 	bool restart{ false };
@@ -76,8 +81,18 @@ static struct {
 		// SIZE
 		if (const auto& sizeArg{ args.typegetv_any<opt::Flag, opt::Option>('s', "size") }; sizeArg.has_value())
 			Global.bufferLenBytes = str::stol(sizeArg.value());
+
+		// REDIRECT
+		if (const auto& redirectArg{ args.typegetv_any<opt::Option>("redirect") }; redirectArg.has_value()) {
+			Global.useLogRedirect = true;
+			Global.logRedirect = std::ofstream{ redirectArg.value() };
+		}
 	}
 } Global;
+
+#define APP_MUTEX_IDENTIFIER "VolumeControlSingleInstance"
+
+HANDLE appMutex{ nullptr };
 
 int main(const int argc, char** argv)
 {
@@ -85,11 +100,28 @@ int main(const int argc, char** argv)
 	using DUR = std::chrono::duration<double, std::milli>;
 	using TIMEP = std::chrono::time_point<CLK, DUR>;
 
+	// Acquire multi-process multi lock
+	appMutex = CreateMutex(
+		NULL,
+		TRUE,
+		APP_MUTEX_IDENTIFIER
+	);
+
+	// Begin update procedure
 	try {
-		opt::ParamsAPI2 args{ argc, argv, 'u', "url", 'o', "out", 's', "size" };
+		WaitForSingleObject(appMutex, INFINITE);
+
+		opt::ParamsAPI2 args{ argc, argv, 'u', "url", 'o', "out", 's', "size", "redirect" };
 		env::PATH env;
 		const auto& [myPath, myName] { env.resolve_split(argv[0]) };
 		Global.init(args);
+
+		// redirect console output to a file, if enabled.
+		StreamRedirect out{ std::cout }, err{ std::cerr };
+		if (Global.useLogRedirect) {
+			out.redirect(Global.logRedirect.rdbuf());
+			err.redirect(Global.logRedirect.rdbuf());
+		}
 
 		// help
 		if (args.check_any<opt::Flag, opt::Option>('h', "help") || args.empty()) {
@@ -154,6 +186,10 @@ int main(const int argc, char** argv)
 			std::cerr << term::get_error() << "Received Error Response Code " << term::setcolor::red << 400 << term::setcolor::reset << " (Bad Request)" << std::endl;
 			error = true;
 			break;
+		case 401:
+			std::cerr << term::get_error() << "Received Error Response Code " << term::setcolor::red << 401 << term::setcolor::reset << " (Unauthorized)" << std::endl;
+			error = true;
+			break;
 		case 403:
 			std::cerr << term::get_error() << "Received Error Response Code " << term::setcolor::red << 403 << term::setcolor::reset << " (Forbidden)" << std::endl;
 			error = true;
@@ -202,16 +238,24 @@ int main(const int argc, char** argv)
 				std::cerr
 					<< term::get_error() << "Failed to start '" << Global.out.filename().generic_string() << "'!\n"
 					<< term::get_placeholder() << "Error Message:  '" << GetLastErrorAsString() << '\'' << std::endl;
-					;
+				;
 			}
 		}
 
+		if (appMutex != nullptr)
+			CloseHandle(appMutex);
 		return 0;
 	} catch (const std::exception& ex) {
 		std::cerr << term::get_fatal() << ex.what() << std::endl;
+
+		if (appMutex != nullptr)
+			CloseHandle(appMutex);
 		return 1;
 	} catch (...) {
 		std::cerr << term::get_fatal() << "An undefined exception occurred!" << std::endl;
+
+		if (appMutex != nullptr)
+			CloseHandle(appMutex);
 		return 1;
 	}
 }
