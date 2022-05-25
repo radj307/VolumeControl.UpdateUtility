@@ -2,7 +2,7 @@
 
 #include <Windows.h>
 
-bool start_process(std::string const& path)
+bool start_process(std::string const& commandline)
 {
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
@@ -10,7 +10,7 @@ bool start_process(std::string const& path)
 
     auto result{ static_cast<bool>(CreateProcessA(
         NULL,
-        const_cast<char*>(path.data()),
+        const_cast<char*>(commandline.data()),
         NULL,
         NULL,
         FALSE,

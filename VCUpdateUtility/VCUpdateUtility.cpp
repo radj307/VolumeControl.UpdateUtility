@@ -33,10 +33,10 @@ struct Help {
 			<< "  -o, --out <PATH>       Specifies the output file location." << '\n'
 			<< "                           If this already exists, it is renamed by appending '.backup' before downloading." << '\n'
 			<< "  -s, --size <BYTES>     Specifies the amount of memory to reserve for streaming the file. (RECOMMENDED)" << '\n'
-			<< "      --no-backup        Prevents a backup from being made at all." << '\n'
-			<< "      --keep-backup      Doesn't delete the backup file once the download has successfully completed." << '\n'
 			<< "  -r, --restart          Attempts to start the new instance before the program exits." << '\n'
 			<< "      --redirect <PATH>  Redirects console output to the specified file." << '\n'
+			<< "      --no-backup        Prevents a backup from being made at all." << '\n'
+			<< "      --keep-backup      Doesn't delete the backup file once the download has successfully completed." << '\n'
 			<< '\n'
 			<< "RETURNS:\n"
 			<< "  0                     Success" << '\n'
@@ -232,7 +232,7 @@ int main(const int argc, char** argv)
 
 		// restart the program if enabled
 		if (Global.restart) {
-			if (start_process(Global.out.generic_string()))
+			if (start_process(Global.out.generic_string() + " --cleanup"))
 				std::cout << term::get_msg() << "Started '" << Global.out.filename().generic_string() << "'." << std::endl;
 			else {
 				std::cerr
