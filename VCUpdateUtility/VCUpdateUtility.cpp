@@ -1,94 +1,19 @@
 #include "rc/version.h"
 #include "StreamRedirect.hpp"
+#include "Global.hpp"
 #include "win.h"
 
 #include <TermAPI.hpp>
-#include <ParamsAPI2.hpp>
 #include <envpath.hpp>
 #include <cpr/cpr.h>
 
 #include <iostream>
+
+#if OS_WIN
 #include <Windows.h>
-
-/// @brief	Helper functor that prints the usage guide.
-struct Help {
-	const std::string& _name;
-
-	Help(const std::string& programName) : _name{ programName } {}
-
-	friend std::ostream& operator<<(std::ostream& os, const Help& h)
-	{
-		return os
-			<< "VCUpdateUtility  v" << VCUpdateUtility_VERSION_EXTENDED << '\n'
-			<< "  Volume Control Update Utility\n"
-			<< '\n'
-			<< "USAGE:\n"
-			<< "  " << h._name << " <OPTIONS>" << '\n'
-			<< '\n'
-			<< "OPTIONS:\n"
-			<< "  -h, --help             Prints this help display, then exits." << '\n'
-			<< "  -v, --version          Prints the current version number, then exits." << '\n'
-			<< "  -q, --quiet            Prevents most console output." << '\n'
-			<< "  -u, --url <URI>        Specifies the target download URL." << '\n'
-			<< "  -o, --out <PATH>       Specifies the output file location." << '\n'
-			<< "                           If this already exists, it is renamed by appending '.backup' before downloading." << '\n'
-			<< "  -s, --size <BYTES>     Specifies the amount of memory to reserve for streaming the file. (RECOMMENDED)" << '\n'
-			<< "  -r, --restart          Attempts to start the new instance before the program exits." << '\n'
-			<< "      --redirect <PATH>  Redirects console output to the specified file." << '\n'
-			<< "      --no-backup        Prevents a backup from being made at all." << '\n'
-			<< "      --keep-backup      Doesn't delete the backup file once the download has successfully completed." << '\n'
-			<< '\n'
-			<< "RETURNS:\n"
-			<< "  0                     Success" << '\n'
-			<< "  1                     Failure" << '\n'
-			<< "  2                     Download Error" << '\n'
-			;
-	}
-};
-
-/// @brief	Static global variables.
-static struct {
-	bool quiet{ false };
-	std::string url;
-	std::filesystem::path out, backup;
-	std::ofstream logRedirect;
-	bool useLogRedirect{ false };
-	bool noBackup{ false };
-	bool keepBackup{ false };
-	bool restart{ false };
-	long bufferLenBytes{ 1024 };
-
-	/**
-	 * @brief		Performs value initialization for the static Global struct.
-	 * @param args	The arguments object from main.
-	 */
-	static void init(opt::ParamsAPI2 const& args)
-	{
-		// BOOLEANS
-		Global.quiet = args.check_any<opt::Flag, opt::Option>('q', "quiet");
-		Global.noBackup = args.check_any<opt::Option>("no-backup");
-		Global.keepBackup = args.check_any<opt::Option>("keep-backup");
-		Global.restart = args.check_any<opt::Flag, opt::Option>('r', "restart");
-
-		// URL
-		if (const auto& urlArg{ args.typegetv_any<opt::Flag, opt::Option>('u', "url") }; urlArg.has_value())
-			Global.url = urlArg.value();
-
-		// OUT
-		if (const auto& outArg{ args.typegetv_any<opt::Flag, opt::Option>('o', "out") }; outArg.has_value())
-			Global.out = std::filesystem::path{ outArg.value() };
-
-		// SIZE
-		if (const auto& sizeArg{ args.typegetv_any<opt::Flag, opt::Option>('s', "size") }; sizeArg.has_value())
-			Global.bufferLenBytes = str::stol(sizeArg.value());
-
-		// REDIRECT
-		if (const auto& redirectArg{ args.typegetv_any<opt::Option>("redirect") }; redirectArg.has_value()) {
-			Global.useLogRedirect = true;
-			Global.logRedirect = std::ofstream{ redirectArg.value() };
-		}
-	}
-} Global;
+#else
+#error VCUpdateUtility does not support non-windows operating systems!
+#endif
 
 #define APP_MUTEX_IDENTIFIER "VolumeControlSingleInstance"
 
@@ -96,6 +21,8 @@ HANDLE appMutex{ nullptr };
 
 int main(const int argc, char** argv)
 {
+	std::cout << term::EnableANSI;
+
 	using CLK = std::chrono::high_resolution_clock;
 	using DUR = std::chrono::duration<double, std::milli>;
 	using TIMEP = std::chrono::time_point<CLK, DUR>;
@@ -141,11 +68,13 @@ int main(const int argc, char** argv)
 		else if (Global.out.empty())
 			throw make_exception("No output path was specified!");
 
-		std::cout << term::get_msg() << "Target URL:  '" << Global.url << '\'' << std::endl;
-		std::cout << term::get_msg() << "Output Path: '" << Global.out.generic_string() << '\'';
-		if (Global.out.is_relative())
-			std::cout << "  ( '" << (myPath / Global.out).generic_string() << "' )" << std::endl;
-		else std::cout << std::endl;
+		if (!Global.quiet) {
+			std::cout << Global.Palette.get_msg() << "Target URL:  '" << Global.Palette(Color::URL) << Global.url << Global.Palette() << '\'' << std::endl;
+			std::cout << Global.Palette.get_msg() << "Output Path: '" << Global.Palette(Color::PATH) << Global.out.generic_string() << Global.Palette() << '\'';
+			if (Global.out.is_relative())
+				std::cout << "  ( '" << Global.Palette(Color::PATH) << (myPath / Global.out).generic_string() << Global.Palette() << "' )" << std::endl;
+			else std::cout << std::endl;
+		}
 
 		// send a GET request for the file
 		cpr::Session session;
@@ -157,6 +86,8 @@ int main(const int argc, char** argv)
 		if (!Global.noBackup && file::exists(Global.out)) {
 			Global.backup = std::filesystem::path{ Global.out.generic_string() + ".backup" };
 			std::filesystem::rename(Global.out, Global.backup);
+			if (!Global.quiet)
+				std::cout << Global.Palette.get_msg() << "Created backup '" << Global.Palette(Color::PATH) << Global.out << Global.Palette() << "' => '" << Global.Palette(Color::PATH) << Global.backup << Global.Palette() << '\'' << std::endl;
 		}
 
 		const TIMEP tBegin{ CLK::now() };
@@ -168,7 +99,7 @@ int main(const int argc, char** argv)
 
 		const TIMEP tEnd{ CLK::now() };
 
-		std::cout << term::get_msg() << "Download completed after " << term::setcolor::yellow << std::chrono::duration_cast<DUR>(tEnd - tBegin).count() << term::setcolor::reset << " ms" << std::endl;
+		std::cout << Global.Palette.get_msg() << "Download completed after " << Global.Palette(Color::ELAPSED_TIME) << std::chrono::duration_cast<DUR>(tEnd - tBegin).count() << Global.Palette() << " ms" << std::endl;
 
 		// get the file length
 		auto len{ ofs.tellp() };
@@ -180,32 +111,30 @@ int main(const int argc, char** argv)
 		// check the response code
 		switch (response.status_code) {
 		case 200://< success
-			std::cerr << term::get_msg() << "Received Success Response Code " << term::setcolor::green << 200 << term::setcolor::reset << '\n';
+			std::cerr << Global.Palette.get_msg() << "Received Success Response Code " << Global.Palette(Color::STATUS_OK) << 200 << Global.Palette() << '\n';
 			break;
 		case 400:
-			std::cerr << term::get_error() << "Received Error Response Code " << term::setcolor::red << 400 << term::setcolor::reset << " (Bad Request)" << std::endl;
+			std::cerr << Global.Palette.get_error() << "Received Error Response Code " << Global.Palette(Color::STATUS_ERROR) << 400 << Global.Palette() << " (Bad Request)" << std::endl;
 			error = true;
 			break;
 		case 401:
-			std::cerr << term::get_error() << "Received Error Response Code " << term::setcolor::red << 401 << term::setcolor::reset << " (Unauthorized)" << std::endl;
+			std::cerr << Global.Palette.get_error() << "Received Error Response Code " << Global.Palette(Color::STATUS_ERROR) << 401 << Global.Palette() << " (Unauthorized)" << std::endl;
 			error = true;
 			break;
 		case 403:
-			std::cerr << term::get_error() << "Received Error Response Code " << term::setcolor::red << 403 << term::setcolor::reset << " (Forbidden)" << std::endl;
+			std::cerr << Global.Palette.get_error() << "Received Error Response Code " << Global.Palette(Color::STATUS_ERROR) << 403 << Global.Palette() << " (Forbidden)" << std::endl;
 			error = true;
 			break;
 		case 404:
-			std::cerr << term::get_error() << "Received Error Response Code " << term::setcolor::red << 404 << term::setcolor::reset << " (Not Found)" << std::endl;
+			std::cerr << Global.Palette.get_error() << "Received Error Response Code " << Global.Palette(Color::STATUS_ERROR) << 404 << Global.Palette() << " (Not Found)" << std::endl;
 			error = true;
 			break;
 		default:
-			std::cerr << term::get_warn() << "Received Unexpected Response Code " << term::setcolor::intense_yellow << response.status_code << term::setcolor::reset << std::endl;
-			error = true;
+			std::cerr << Global.Palette.get_warn() << "Received Unexpected Response Code " << Global.Palette(Color::STATUS_UNEXPECTED) << response.status_code << Global.Palette() << std::endl;
 			break;
 		}
 
-
-		// file length is 0
+		// file length is 0, or the request status code indicates an error
 		if (error || len == 0) {
 			// remove any corrupted file
 			if (file::exists(Global.out))
@@ -214,48 +143,67 @@ int main(const int argc, char** argv)
 			// restore the file from backup
 			if (file::exists(Global.backup)) {
 				std::filesystem::rename(Global.backup, Global.out);
-				std::cout << term::get_msg() << "Restored original file from backup." << std::endl;
+				if (!Global.quiet)
+					std::cout << Global.Palette.get_msg() << "Restored '" << Global.Palette(Color::PATH) << Global.backup << Global.Palette() << "' => '" << Global.Palette(Color::PATH) << Global.out << Global.Palette() << '\'' << std::endl;
 			}
 
 			return 2;
 		}
 		// Successful:
-		std::cout << term::get_msg() << "Wrote " << term::setcolor::yellow << len << term::setcolor::reset << " bytes to '" << Global.out.generic_string() << "'" << std::endl;
+		if (!Global.quiet)
+			std::cout << Global.Palette.get_msg() << "Wrote " << Global.Palette(Color::SIZE) << len << Global.Palette() << " bytes to '" << Global.out.generic_string() << "'" << std::endl;
 
 		// delete the backup file once we're done
 		if (!Global.keepBackup && file::exists(Global.backup)) {
 			if (std::filesystem::remove(Global.backup))
-				std::cout << term::get_msg() << "Deleted '" << Global.backup.generic_string() << '\'' << std::endl;
+				std::cout << Global.Palette.get_msg() << "Deleted Backup '" << Global.backup.generic_string() << '\'' << std::endl;
 			else // failed to delete file
-				std::cout << term::get_warn() << "Failed to delete '" << Global.backup.generic_string() << '\'' << std::endl;
+				std::cout << Global.Palette.get_warn() << "Failed to delete backup '" << Global.backup.generic_string() << '\'' << std::endl;
 		}
 
 		// restart the program if enabled
 		if (Global.restart) {
 			if (start_process(Global.out.generic_string() + " --cleanup"))
-				std::cout << term::get_msg() << "Started '" << Global.out.filename().generic_string() << "'." << std::endl;
-			else {
-				std::cerr
-					<< term::get_error() << "Failed to start '" << Global.out.filename().generic_string() << "'!\n"
-					<< term::get_placeholder() << "Error Message:  '" << GetLastErrorAsString() << '\'' << std::endl;
-				;
-			}
+				std::cout << Global.Palette.get_msg() << "(Re)started '" << Global.out.filename().generic_string() << "'." << std::endl;
+			else std::cerr
+				<< Global.Palette.get_error() << "Failed to (re)start '" << Global.out.filename().generic_string() << "'!\n"
+				<< Global.Palette.get_placeholder() << "Error Message:  '" << GetLastErrorAsString() << '\'' << std::endl;
 		}
 
+		// Release mutex
 		if (appMutex != nullptr)
 			CloseHandle(appMutex);
+
+		// pause
+		if (Global.pauseBeforeExit && !Global.useLogRedirect) {
+			std::cout << "Press any key to exit..." << std::endl;
+			while (!term::kbhit()) {}
+		}
+
 		return 0;
 	} catch (const std::exception& ex) {
-		std::cerr << term::get_fatal() << ex.what() << std::endl;
-
+		std::cerr << Global.Palette.get_fatal() << ex.what() << std::endl;
+		// Release mutex
 		if (appMutex != nullptr)
 			CloseHandle(appMutex);
+		// pause
+		if (Global.pauseBeforeExit && !Global.useLogRedirect) {
+			std::cout << "Press any key to exit..." << std::endl;
+			while (!term::kbhit()) {}
+		}
+
 		return 1;
 	} catch (...) {
-		std::cerr << term::get_fatal() << "An undefined exception occurred!" << std::endl;
-
+		std::cerr << Global.Palette.get_fatal() << "An undefined exception occurred!" << std::endl;
+		// Release mutex
 		if (appMutex != nullptr)
 			CloseHandle(appMutex);
+		// pause
+		if (Global.pauseBeforeExit && !Global.useLogRedirect) {
+			std::cout << "Press any key to exit..." << std::endl;
+			while (!term::kbhit()) {}
+		}
+
 		return 1;
 	}
 }

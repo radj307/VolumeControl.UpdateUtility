@@ -62,3 +62,8 @@ target_sources(VCUpdateUtility PRIVATE "${HEADERS}")
 
 include(PackageInstaller)
 INSTALL_EXECUTABLE(VCUpdateUtility "${CMAKE_INSTALL_PREFIX}/bin/")
+
+if(ENABLE_TESTING)
+	include(CTest)
+	add_subdirectory("UnitTests")
+endif()
