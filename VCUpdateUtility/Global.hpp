@@ -104,15 +104,17 @@ static struct {
 		if (const auto& sizeArg{ args.typegetv_any<opt::Flag, opt::Option>('s', "size") }; sizeArg.has_value())
 			Global.bufferLenBytes = str::stol(sizeArg.value());
 
+		// NO-COLOR
+		if (args.check_any<opt::Flag, opt::Option>('n', "no-color"))
+			Global.Palette.setEnabled(false);
+
 		// REDIRECT
 		if (const auto& redirectArg{ args.typegetv_any<opt::Option>("redirect") }; redirectArg.has_value()) {
 			Global.useLogRedirect = true;
 			Global.logRedirect = std::ofstream{ redirectArg.value() };
-		}
-
-		// NO-COLOR
-		if (args.check_any<opt::Flag, opt::Option>('n', "no-color"))
+			// Disable escape sequences when redirecting to a file
 			Global.Palette.setEnabled(false);
+		}
 	}
 } Global;
 
