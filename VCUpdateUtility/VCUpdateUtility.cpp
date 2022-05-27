@@ -36,8 +36,6 @@ int main(const int argc, char** argv)
 
 	// Begin update procedure
 	try {
-		WaitForSingleObject(appMutex, INFINITE);
-
 		opt::ParamsAPI2 args{ argc, argv, 'u', "url", 'o', "out", 's', "size", "redirect" };
 		env::PATH env;
 		const auto& [myPath, myName] { env.resolve_split(argv[0]) };
@@ -61,6 +59,10 @@ int main(const int argc, char** argv)
 			std::cout << VCUpdateUtility_VERSION_EXTENDED << '\n';
 			return 0;
 		}
+
+		if (!Global.quiet)
+			std::cout << Global.Palette.get_msg() << "Waiting for mutex to become available..." << std::endl;
+		WaitForSingleObject(appMutex, INFINITE);
 
 		// validate inputs
 		if (Global.url.empty())
